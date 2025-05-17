@@ -13,7 +13,24 @@ app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const { default: axios } = require("axios");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.pabg0.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+/**
+Store ID: bistr68273bca5ed32
+Store Password (API/Secret Key): bistr68273bca5ed32@ssl
+ 
+Merchant Panel URL: https://sandbox.sslcommerz.com/manage/ (Credential as you inputted in the time of registration)
+Store name: testbistri4xj
+Registered URL: www.bistroboss.com
+Session API to generate transaction: https://sandbox.sslcommerz.com/gwprocess/v3/api.php
+Validation API: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?wsdl
+Validation API (Web Service) name: https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
+
+*/
+
+// SSLCommerz
+// step 1 payment initiate
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -241,6 +258,7 @@ async function run() {
       };
 
       const deleteResult = await cartCollection.deleteMany(query);
+      // send user email about payment confirmation
       res.send({ paymentResult, deleteResult });
     });
 
@@ -322,6 +340,63 @@ async function run() {
         .toArray();
 
       res.send(result);
+    });
+
+    app.post("/create-ssl-payment", async (req, res) => {
+      const payment = req.body;
+      // console.log("payment info", payment);
+
+      const trxid = new ObjectId().toString();
+
+      const initiate = {
+        store_id: "bistr68273bca5ed32",
+        store_passwd: "bistr68273bca5ed32@ssl",
+        total_amount: payment.price,
+        currency: "BDT",
+        tran_id: trxid,
+        success_url: "http://localhost:5173/success-payment",
+        fail_url: "http://localhost:5173/fail",
+        cancel_url: "http://localhost:5173/cancel",
+        ipn_url: "http://localhost:5173/ipn-success-payment",
+        cus_name: "Customer Name",
+        cus_email: `${payment.email}`,
+        cus_add1: "Dhaka",
+        cus_add2: "Dhaka",
+        cus_city: "Dhaka",
+        cus_state: "Dhaka",
+        cus_postcode: "1000",
+        cus_country: "Bangladesh",
+        cus_phone: "0171111111",
+        shipping_method: "No",
+        num_of_item: "",
+        weight_of_items: "",
+        logistic_pickup_id: "",
+        logistic_delivery_type: "",
+        ship_name: "",
+        ship_add1: "",
+        ship_add2: "",
+        ship_area: "",
+        ship_city: "",
+        ship_sub_city: "",
+        ship_postcode: "",
+        ship_country: "",
+        product_name: "Computer",
+        product_category: "Electronics",
+        product_profile: "Electronics",
+      };
+
+      const iniResponse = await axios({
+        url: "https://sandbox.sslcommerz.com/gwprocess/v4/api.php",
+        method: "POST",
+        data: initiate,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      const gatewayUrl = iniResponse?.data?.GatewayPageURL;
+
+      console.log(gatewayUrl, "iniResponse");
     });
 
     // Send a ping to confirm a successful connection
