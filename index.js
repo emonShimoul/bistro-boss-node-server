@@ -11,6 +11,7 @@ const { ObjectId } = require("mongodb");
 //middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded());
 
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const { default: axios } = require("axios");
@@ -348,13 +349,16 @@ async function run() {
 
       const trxid = new ObjectId().toString();
 
+      payment.transactionId = trxid;
+
+      // step 1: initialize the data
       const initiate = {
         store_id: "bistr68273bca5ed32",
         store_passwd: "bistr68273bca5ed32@ssl",
         total_amount: payment.price,
         currency: "BDT",
         tran_id: trxid,
-        success_url: "http://localhost:5173/success-payment",
+        success_url: "http://localhost:5000/success-payment",
         fail_url: "http://localhost:5173/fail",
         cancel_url: "http://localhost:5173/cancel",
         ipn_url: "http://localhost:5173/ipn-success-payment",
@@ -385,6 +389,7 @@ async function run() {
         product_profile: "Electronics",
       };
 
+      // step 2: send the request to sslcommerz payment gateway
       const iniResponse = await axios({
         url: "https://sandbox.sslcommerz.com/gwprocess/v4/api.php",
         method: "POST",
@@ -394,9 +399,64 @@ async function run() {
         },
       });
 
-      const gatewayUrl = iniResponse?.data?.GatewayPageURL;
+      const saveData = await paymentCollection.insertOne(payment);
 
-      console.log(gatewayUrl, "iniResponse");
+      // step 3: get the url for payment
+      const gatewayUrl = iniResponse?.data?.GatewayPageURL;
+      // console.log(gatewayUrl, "iniResponse");
+
+      // redirect the customer to the gateway
+      res.send({ gatewayUrl });
+    });
+
+    app.post("/success-payment", async (req, res) => {
+      // step 5: success payment data
+      const paymentSuccess = req.body;
+
+      // step 6: validation
+      const { data } = await axios.get(
+        `https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=bistr68273bca5ed32&store_passwd=bistr68273bca5ed32@ssl&format=json`
+      );
+
+      if (data.status !== "VALID") {
+        return res.send({ message: "Invalid Payment" });
+      }
+
+      // step 7: update the payment to your database
+      const updatedPayment = await paymentCollection.updateOne(
+        { transactionId: data.tran_id },
+        {
+          $set: {
+            status: "success",
+          },
+        }
+      );
+
+      // step 8: find the payment for more functionality
+      const payment = await paymentCollection.findOne({
+        transactionId: data.tran_id,
+      });
+
+      console.log("payment", payment);
+
+      // carefully delete each item from the cart
+      console.log("payment info", payment);
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+
+      // step 9: delete the cart data
+      const deleteResult = await cartCollection.deleteMany(query);
+      console.log("deleted result", deleteResult);
+
+      // step 10: redirect customer to the success page
+      res.redirect("http://localhost:5173/success");
+
+      console.log(updatedPayment, "update payment");
+
+      console.log("isValidPayment", data);
     });
 
     // Send a ping to confirm a successful connection
